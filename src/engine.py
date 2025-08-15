@@ -1,5 +1,5 @@
 import torch
-from tqdm.auto import tqdm
+# from tqdm.auto import tqdm
 from typing import List, Tuple, Dict
 
 # device agnostic code
@@ -15,10 +15,12 @@ def train_step(model: torch.nn.Module,
                device: torch.device = device) -> Tuple[float, float]:
     train_loss, train_acc = 0, 0
     model.train()
-    for batch, (X, y) in enumerate(dataloader):
-        X, y = X.to(device), y.to(device)
+    for batch_idx, batch in enumerate(dataloader):
+        X = batch["image"].to(device)
+        y = batch["corners"].to(device)
         y_logits = model(X)
 
+        y = y.view(y.size(0), -1)
         loss = loss_fn(y_logits, y)
         train_loss += loss.item()
 
@@ -26,8 +28,13 @@ def train_step(model: torch.nn.Module,
         loss.backward()
         optimizer.step()
 
-        y_pred = torch.softmax(y_logits, dim=1).argmax(dim=1)
-        train_acc += ((y_pred == y).sum().item() / len(y_pred))*100
+        # y_pred = torch.softmax(y_logits, dim=1).argmax(dim=1)
+        with torch.no_grad():
+            pred_points = y_logits.view(-1, 4, 2)
+            true_points = y.view(-1, 4, 2)
+            point_dist = torch.norm(pred_points - true_points, dim=2).mean().item()
+            train_acc += point_dist  # rename to train_error
+
     
     train_loss /= len(dataloader)
     train_acc /= len(dataloader)
@@ -35,22 +42,30 @@ def train_step(model: torch.nn.Module,
     return train_loss, train_acc
 
 # test step (validation)
-def test_step(model: torch.nn.Module,
+def val_step(model: torch.nn.Module,
               dataloader: torch.utils.data.DataLoader,
               loss_fn: torch.nn.Module,
               device: torch.device = device) -> Tuple[float, float]:
     test_loss, test_acc = 0, 0
     model.eval()
     with torch.inference_mode():
-        for X, y in dataloader:
-            X, y = X.to(device), y.to(device)
+        for batch_idx, batch in enumerate(dataloader):
+            X = batch["image"].to(device)
+            y = batch["corners"].to(device)
+            # X, y = X.to(device), y.to(device)
             test_logits = model(X)
 
+            y = y.view(y.size(0), -1)
             loss = loss_fn(test_logits, y)
             test_loss += loss.item()
 
             test_pred = torch.softmax(test_logits, dim=1).argmax(dim=1)
-            test_acc += ((test_pred == y).sum().item() / len(test_pred))*100
+            # test_acc += ((test_pred == y).sum().item() / len(test_pred))*100
+            with torch.no_grad():
+                pred_points = test_logits.view(-1, 4, 2)
+                true_points = y.view(-1, 4, 2)
+                point_dist = torch.norm(pred_points - true_points, dim=2).mean().item()
+                test_acc += point_dist  # rename to train_error
 
     test_loss /= len(dataloader)
     test_acc /= len(dataloader)
@@ -73,7 +88,7 @@ def train(model: torch.nn.Module,
     }
 
     model.to(device)
-    for epoch in tqdm(range(epochs)):
+    for epoch in range(epochs):
         train_loss, train_acc = train_step(
             model=model,
             dataloader=train_dataloader,
@@ -81,11 +96,10 @@ def train(model: torch.nn.Module,
             optimizer=optimizer,
             device=device
         )
-        test_loss, test_acc = test_step(
+        test_loss, test_acc = val_step(
             model=model,
             dataloader=test_dataloader,
             loss_fn=loss_fn,
-            optimizer=optimizer,
             device=device
         )
 
