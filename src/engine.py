@@ -28,12 +28,27 @@ def train_step(model: torch.nn.Module,
         loss.backward()
         optimizer.step()
 
-        # y_pred = torch.softmax(y_logits, dim=1).argmax(dim=1)
         with torch.no_grad():
+            threshold = 0.05  # pixels
             pred_points = y_logits.view(-1, 4, 2)
             true_points = y.view(-1, 4, 2)
-            point_dist = torch.norm(pred_points - true_points, dim=2).mean().item()
-            train_acc += point_dist  # rename to train_error
+            
+            # DEBUG: Print actual values
+            if batch_idx == 0:  # Only print for first batch
+                print(f"Pred range: [{pred_points.min():.3f}, {pred_points.max():.3f}]")
+                print(f"True range: [{true_points.min():.3f}, {true_points.max():.3f}]")
+                print(f"Sample pred corner: {pred_points[0, 0].cpu().numpy()}")
+                print(f"Sample true corner: {true_points[0, 0].cpu().numpy()}")
+            
+            point_distances = torch.norm(pred_points - true_points, dim=2)
+            
+            # DEBUG: Print distances
+            if batch_idx == 0:
+                print(f"Distance range: [{point_distances.min():.3f}, {point_distances.max():.3f}]")
+                print(f"Points within {threshold} pixels: {(point_distances < threshold).sum().item()}/{point_distances.numel()}")
+            
+            accuracy = (point_distances < threshold).float().mean().item() * 100
+            train_acc += accuracy
 
     
     train_loss /= len(dataloader)
@@ -59,13 +74,27 @@ def val_step(model: torch.nn.Module,
             loss = loss_fn(test_logits, y)
             test_loss += loss.item()
 
-            test_pred = torch.softmax(test_logits, dim=1).argmax(dim=1)
-            # test_acc += ((test_pred == y).sum().item() / len(test_pred))*100
             with torch.no_grad():
+                threshold = 0.05  # pixels
                 pred_points = test_logits.view(-1, 4, 2)
                 true_points = y.view(-1, 4, 2)
-                point_dist = torch.norm(pred_points - true_points, dim=2).mean().item()
-                test_acc += point_dist  # rename to train_error
+                
+                # DEBUG: Print actual values
+                if batch_idx == 0:  # Only print for first batch
+                    print(f"Pred range: [{pred_points.min():.3f}, {pred_points.max():.3f}]")
+                    print(f"True range: [{true_points.min():.3f}, {true_points.max():.3f}]")
+                    print(f"Sample pred corner: {pred_points[0, 0].cpu().numpy()}")
+                    print(f"Sample true corner: {true_points[0, 0].cpu().numpy()}")
+                
+                point_distances = torch.norm(pred_points - true_points, dim=2)
+                
+                # DEBUG: Print distances
+                if batch_idx == 0:
+                    print(f"Distance range: [{point_distances.min():.3f}, {point_distances.max():.3f}]")
+                    print(f"Points within {threshold} pixels: {(point_distances < threshold).sum().item()}/{point_distances.numel()}")
+                
+                accuracy = (point_distances < threshold).float().mean().item() * 100
+                test_acc += accuracy
 
     test_loss /= len(dataloader)
     test_acc /= len(dataloader)
